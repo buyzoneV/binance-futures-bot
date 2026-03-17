@@ -39,33 +39,43 @@ class BinanceFuturesClient:
         params["signature"] = signature
         return params
 
-    def _request(self, method: str, path: str, params: dict = None, signed: bool = False) -> dict | list:
-        """Make an API request."""
+    def _request(self, method: str, path: str, params: dict = None, signed: bool = False, max_retries: int = 3) -> dict | list:
+        """Make an API request with automatic retry on network errors."""
         url = f"{self.base_url}{path}"
         params = params or {}
 
-        if signed:
-            params = self._sign(params)
+        for attempt in range(1, max_retries + 1):
+            request_params = params.copy()
+            if signed:
+                request_params = self._sign(request_params)
 
-        try:
-            if method == "GET":
-                resp = self.session.get(url, params=params, timeout=30)
-            elif method == "POST":
-                resp = self.session.post(url, params=params, timeout=30)
-            elif method == "DELETE":
-                resp = self.session.delete(url, params=params, timeout=30)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
+            try:
+                if method == "GET":
+                    resp = self.session.get(url, params=request_params, timeout=30)
+                elif method == "POST":
+                    resp = self.session.post(url, params=request_params, timeout=30)
+                elif method == "DELETE":
+                    resp = self.session.delete(url, params=request_params, timeout=30)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
 
-            resp.raise_for_status()
-            return resp.json()
+                resp.raise_for_status()
+                return resp.json()
 
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
-            raise
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error: {e}")
-            raise
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+                raise
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                if attempt < max_retries:
+                    wait = attempt * 5
+                    logger.warning(f"Network error (attempt {attempt}/{max_retries}): {e}. Retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"Network error after {max_retries} attempts: {e}")
+                    raise
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request error: {e}")
+                raise
 
     # ─── Market Data ──────────────────────────────────────────────
 

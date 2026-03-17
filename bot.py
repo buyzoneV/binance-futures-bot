@@ -98,13 +98,24 @@ class TradingBot:
 
         logger.info("Bot started. Press Ctrl+C to stop.")
 
+        consecutive_errors = 0
+
         while self.running:
             try:
                 self._tick()
+                consecutive_errors = 0
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                logger.error(f"Error in main loop: {e}", exc_info=True)
+                consecutive_errors += 1
+                logger.error(f"Error in main loop ({consecutive_errors}): {e}", exc_info=True)
+
+                # Back off on repeated errors (max 5 min wait)
+                if consecutive_errors > 1:
+                    backoff = min(consecutive_errors * 30, 300)
+                    logger.warning(f"Backing off for {backoff}s due to repeated errors")
+                    time.sleep(backoff)
+                    continue
 
             # Sleep between ticks
             if self.running:

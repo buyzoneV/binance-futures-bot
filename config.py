@@ -23,6 +23,9 @@ class TradingConfig:
     # Take profit target (30% of total invested)
     TAKE_PROFIT_PCT: float = 0.30
 
+    # Stop loss (10% of total invested)
+    STOP_LOSS_PCT: float = 0.10
+
     # Asset selection
     TOP_VOLUME_COUNT: int = 10
 

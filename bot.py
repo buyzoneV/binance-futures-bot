@@ -184,11 +184,42 @@ class TradingBot:
         if not trade.is_fully_entered:
             self.strategy.check_additional_entries()
 
-        # Check take profit condition (this also logs the PnL)
+        # Check stop loss first (-10% of invested)
+        stopped = self.strategy.check_stop_loss()
+        if stopped:
+            logger.info("STOP LOSS triggered. Re-entering on the same asset...")
+            # Re-enter immediately on the same symbol with same direction
+            self._reenter_after_stop_loss(trade.symbol, trade.direction)
+            return
+
+        # Check take profit condition (+30% of invested)
         closed = self.strategy.check_take_profit()
         if closed:
             logger.info("Trade closed with profit target reached!")
             logger.info("Will scan for new opportunity on next cycle.")
+
+    def _reenter_after_stop_loss(self, symbol: str, direction: str):
+        """
+        After a stop loss, re-enter the same asset from $10.
+        Same symbol, same direction, fresh entry cycle.
+        """
+        logger.info(f"Re-entering {symbol} ({direction}) after stop loss...")
+
+        # Set up a fresh trade on the same symbol
+        trade = self.strategy.setup_trade(symbol, direction)
+        if not trade:
+            logger.warning("Failed to set up re-entry trade. Will scan fresh next cycle.")
+            return
+
+        # Execute the $10 initial entry
+        success = self.strategy.execute_initial_entry()
+        if success:
+            logger.info(f"Re-entry executed: {symbol} ({direction}) with $10")
+            status = self.strategy.get_status()
+            logger.info(f"Status: {status}")
+        else:
+            logger.error("Re-entry failed. Will scan fresh next cycle.")
+            self.strategy.active_trade = None
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""

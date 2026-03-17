@@ -433,6 +433,27 @@ class TradingStrategy:
 
         return executed
 
+    def _get_unrealized_pnl(self) -> float | None:
+        """
+        Get unrealized PnL from the exchange for the active trade.
+        Returns the PnL value or None if no position found.
+        """
+        trade = self.active_trade
+        if not trade:
+            return None
+
+        try:
+            positions = self.client.get_positions(trade.symbol)
+            for pos in positions:
+                if pos["symbol"] == trade.symbol:
+                    pos_amt = float(pos.get("positionAmt", 0))
+                    if pos_amt != 0:
+                        return float(pos.get("unRealizedProfit", 0))
+        except Exception as e:
+            logger.warning(f"Could not fetch position PnL: {e}")
+
+        return None
+
     def check_take_profit(self) -> bool:
         """
         Check if unrealized profit has reached 30% of total invested.
@@ -443,23 +464,9 @@ class TradingStrategy:
         if not trade or trade.total_quantity <= 0:
             return False
 
-        # Use the exchange's own PnL calculation (most reliable)
-        try:
-            positions = self.client.get_positions(trade.symbol)
-            unrealized_pnl = None
-            for pos in positions:
-                if pos["symbol"] == trade.symbol:
-                    pos_amt = float(pos.get("positionAmt", 0))
-                    if pos_amt != 0:
-                        unrealized_pnl = float(pos.get("unRealizedProfit", 0))
-                        break
-
-            if unrealized_pnl is None:
-                logger.debug("No position found on exchange for PnL check")
-                return False
-
-        except Exception as e:
-            logger.warning(f"Could not fetch position for PnL check: {e}")
+        unrealized_pnl = self._get_unrealized_pnl()
+        if unrealized_pnl is None:
+            logger.debug("No position found on exchange for PnL check")
             return False
 
         target = trade.target_profit_usd
@@ -473,6 +480,31 @@ class TradingStrategy:
         if unrealized_pnl >= target:
             logger.info(
                 f"TAKE PROFIT HIT! PnL: ${unrealized_pnl:.2f} >= target ${target:.2f} ({pnl_pct:.1f}%)"
+            )
+            return self._close_position()
+
+        return False
+
+    def check_stop_loss(self) -> bool:
+        """
+        Check if unrealized loss has reached -10% of total invested.
+        Returns True if position was closed (stop loss triggered).
+        """
+        trade = self.active_trade
+        if not trade or trade.total_quantity <= 0:
+            return False
+
+        unrealized_pnl = self._get_unrealized_pnl()
+        if unrealized_pnl is None:
+            return False
+
+        stop_loss_amount = trade.total_invested * self.config.STOP_LOSS_PCT
+        pnl_pct = (unrealized_pnl / trade.total_invested * 100) if trade.total_invested > 0 else 0
+
+        if unrealized_pnl <= -stop_loss_amount:
+            logger.info(
+                f"STOP LOSS HIT! PnL: ${unrealized_pnl:.2f} <= -${stop_loss_amount:.2f} ({pnl_pct:.1f}%) | "
+                f"Invested: ${trade.total_invested:.2f}"
             )
             return self._close_position()
 

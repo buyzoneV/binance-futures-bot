@@ -74,6 +74,18 @@ class TradingStrategy:
 
     # ─── Symbol Selection ─────────────────────────────────────────
 
+    def _get_tradeable_symbols(self) -> set[str]:
+        """Get the set of symbols that are currently tradeable (TRADING status)."""
+        try:
+            info = self.client.get_exchange_info()
+            return {
+                s["symbol"] for s in info.get("symbols", [])
+                if s.get("status") == "TRADING"
+            }
+        except Exception as e:
+            logger.warning(f"Could not fetch exchange info: {e}")
+            return set()
+
     def scan_and_select(self) -> tuple[str, str] | None:
         """
         Scan the market and select the best trading candidate.
@@ -81,8 +93,17 @@ class TradingStrategy:
         """
         tickers = self.client.get_24hr_tickers()
 
-        # Filter to USDT-margined pairs only
-        usdt_tickers = [t for t in tickers if t["symbol"].endswith("USDT")]
+        # Get tradeable symbols
+        tradeable = self._get_tradeable_symbols()
+        if tradeable:
+            logger.info(f"Found {len(tradeable)} tradeable symbols")
+
+        # Filter to USDT-margined pairs that are actively trading
+        usdt_tickers = [
+            t for t in tickers
+            if t["symbol"].endswith("USDT")
+            and (not tradeable or t["symbol"] in tradeable)
+        ]
 
         # Sort by 24h quote volume (descending) and take top N
         usdt_tickers.sort(key=lambda t: float(t.get("quoteVolume", 0)), reverse=True)
@@ -156,6 +177,11 @@ class TradingStrategy:
 
         # Daily range for computing lower support zone
         daily_range = prev_high - prev_low
+
+        # If daily range is 0 (no price movement), use 1% of current price as fallback
+        if daily_range <= 0:
+            daily_range = current_price * 0.01
+            logger.info(f"Daily range is 0 for {symbol}, using 1% fallback: {daily_range:.6f}")
 
         levels = {
             "current_price": current_price,

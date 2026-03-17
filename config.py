@@ -59,7 +59,7 @@ class APIConfig:
 
     # Base URLs
     MAINNET_REST_URL: str = "https://fapi.binance.com"
-    TESTNET_REST_URL: str = "https://testnet.binancefuture.com"
+    TESTNET_REST_URL: str = "https://demo-fapi.binance.com"
 
     @property
     def base_url(self) -> str:

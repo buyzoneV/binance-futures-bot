@@ -184,37 +184,11 @@ class TradingBot:
         if not trade.is_fully_entered:
             self.strategy.check_additional_entries()
 
-        # Check take profit condition
+        # Check take profit condition (this also logs the PnL)
         closed = self.strategy.check_take_profit()
         if closed:
             logger.info("Trade closed with profit target reached!")
             logger.info("Will scan for new opportunity on next cycle.")
-
-        # Also verify the position still exists on exchange
-        try:
-            positions = self.client.get_positions(trade.symbol)
-            has_position = False
-            for pos in positions:
-                if pos["symbol"] == trade.symbol:
-                    pos_amt = float(pos.get("positionAmt", 0))
-                    if pos_amt != 0:
-                        has_position = True
-                        unrealized_pnl = float(pos.get("unRealizedProfit", 0))
-                        logger.info(
-                            f"Position: {trade.symbol} | Amt: {pos_amt} | "
-                            f"Unrealized PnL: ${unrealized_pnl:.2f}"
-                        )
-                        break
-
-            if not has_position and trade.entry_count > 0:
-                logger.warning(
-                    f"Position for {trade.symbol} no longer exists on exchange. "
-                    f"It may have been manually closed or liquidated."
-                )
-                self.strategy.active_trade = None
-
-        except Exception as e:
-            logger.warning(f"Could not verify position: {e}")
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""

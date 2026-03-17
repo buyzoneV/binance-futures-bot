@@ -347,7 +347,16 @@ class TradingStrategy:
             entry.filled = True
             entry.order_id = result.get("orderId")
             entry.quantity = quantity
-            entry.fill_price = float(result.get("avgPrice", price))
+
+            # Get fill price — fallback to mark price if avgPrice is 0 or missing
+            fill_price = float(result.get("avgPrice", 0))
+            if fill_price <= 0:
+                try:
+                    mark = self.client.get_mark_price(symbol)
+                    fill_price = float(mark.get("markPrice", price))
+                except Exception:
+                    fill_price = price
+            entry.fill_price = fill_price
 
             trade.update_averages()
 
